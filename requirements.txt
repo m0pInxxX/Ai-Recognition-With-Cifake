@@ -1,0 +1,11 @@
+tensorflow>=2.8.0
+numpy>=1.19.5
+matplotlib>=3.5.2
+scikit-image>=0.19.3
+scikit-learn>=1.0.2
+opencv-python>=4.6.0
+pandas>=1.4.2
+tqdm>=4.64.0
+kaggle>=1.5.12
+pillow>=9.0.1
+gdown>=4.5.1 
