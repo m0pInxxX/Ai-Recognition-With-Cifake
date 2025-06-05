@@ -223,23 +223,16 @@ class AIDetectorGUI:
         
         # Hasil
         result_frame = ttk.LabelFrame(self.control_frame, text="Hasil Deteksi", padding=10)
-        result_frame.pack(fill=tk.X, pady=10)
+        result_frame.pack(fill=tk.X, pady=10, padx=5)
         
-        self.result_var = tk.StringVar(value="Belum ada hasil")
-        result_label = ttk.Label(result_frame, textvariable=self.result_var, font=("Arial", 12))
-        result_label.pack(pady=5)
+        # Menggunakan Text widget alih-alih Label untuk hasil yang lebih baik
+        self.result_text = tk.Text(result_frame, height=4, width=25, font=("Arial", 12))
+        self.result_text.pack(pady=5, fill=tk.X)
+        self.result_text.configure(state='disabled')  # Buat read-only
         
-        self.prob_ai_var = tk.StringVar(value="AI: 0%")
-        prob_ai_label = ttk.Label(result_frame, textvariable=self.prob_ai_var)
-        prob_ai_label.pack(pady=2)
-        
-        self.prob_real_var = tk.StringVar(value="Asli: 0%")
-        prob_real_label = ttk.Label(result_frame, textvariable=self.prob_real_var)
-        prob_real_label.pack(pady=2)
-        
-        # Progress Bar
+        # Progress Bar dengan margin yang lebih baik
         self.progress_bar = ttk.Progressbar(self.control_frame, orient=tk.HORIZONTAL, length=200, mode='indeterminate')
-        self.progress_bar.pack(fill=tk.X, pady=10)
+        self.progress_bar.pack(fill=tk.X, pady=10, padx=5)
     
     def setup_display_panel(self):
         # Frame untuk gambar
@@ -410,9 +403,12 @@ class AIDetectorGUI:
             self.image_label.image = photo  # Simpan referensi
             
             # Reset hasil
-            self.result_var.set("Belum dideteksi")
-            self.prob_ai_var.set("AI: 0%")
-            self.prob_real_var.set("Asli: 0%")
+            self.result_text.configure(state='normal')  # Buka akses untuk edit
+            self.result_text.delete(1.0, tk.END)  # Hapus konten sebelumnya
+            self.result_text.insert(tk.END, f"Hasil Deteksi:\n\n")
+            self.result_text.insert(tk.END, f"AI: 0%\n")
+            self.result_text.insert(tk.END, f"Asli: 0%")
+            self.result_text.configure(state='disabled')  # Kunci kembali
             
         except Exception as e:
             messagebox.showerror("Error", f"Tidak dapat memuat gambar: {str(e)}")
@@ -473,19 +469,13 @@ class AIDetectorGUI:
                 # Prediksi
                 prediction_prob = self.model.predict(features)[0][0]
             
-            # Tentukan kelas prediksi
-            prediction_class = 'AI' if prediction_prob > 0.5 else 'Asli'
-            
             # Tampilkan hasil
-            self.result_var.set(f"Hasil: {prediction_class}")
-            self.prob_ai_var.set(f"AI: {prediction_prob:.3%}")
-            self.prob_real_var.set(f"Asli: {(1 - prediction_prob):.3%}")
-            
-            # Ubah warna hasil berdasarkan prediksi
-            if prediction_class == 'AI':
-                self.result_var.set(f"Hasil: {prediction_class} 🤖")
-            else:
-                self.result_var.set(f"Hasil: {prediction_class} 📷")
+            self.result_text.configure(state='normal')  # Buka akses untuk edit
+            self.result_text.delete(1.0, tk.END)  # Hapus konten sebelumnya
+            self.result_text.insert(tk.END, f"Hasil Deteksi:\n\n")
+            self.result_text.insert(tk.END, f"AI: {prediction_prob:.2%}\n")
+            self.result_text.insert(tk.END, f"Asli: {(1 - prediction_prob):.2%}")
+            self.result_text.configure(state='disabled')  # Kunci kembali
             
             # Hentikan progress bar
             self.progress_bar.stop()

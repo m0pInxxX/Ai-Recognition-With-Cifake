@@ -95,14 +95,13 @@ def classify_image(image_path, model_path, scaler_path=None, output_path=None):
         prediction_class = 'AI' if prediction_prob > 0.5 else 'Asli'
         
         print(f"\nHasil Klasifikasi untuk {image_path}:")
-        print(f"Kelas: {prediction_class}")
-        print(f"Probabilitas gambar AI: {prediction_prob:.4f}")
-        print(f"Probabilitas gambar asli: {1 - prediction_prob:.4f}")
+        print(f"AI: {prediction_prob:.2%}")
+        print(f"Asli: {(1 - prediction_prob):.2%}")
         
         # Tampilkan gambar dengan hasil klasifikasi
         plt.figure(figsize=(10, 6))
         plt.imshow(image)
-        plt.title(f'Klasifikasi: {prediction_class} (AI: {prediction_prob:.4f}, Asli: {1-prediction_prob:.4f})')
+        plt.title(f'AI: {prediction_prob:.2%}, Asli: {1-prediction_prob:.2%}')
         plt.axis('off')
         
         if output_path:
