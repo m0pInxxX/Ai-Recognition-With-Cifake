@@ -188,15 +188,26 @@ def combine_features(feature_list):
 def extract_all_features(image, include_cnn=False, cnn_model=None):
     """Ekstrak semua fitur dari gambar"""
     try:
+        # Konversi ke RGB jika grayscale atau RGBA
+        if len(image.shape) == 2:
+            image = np.stack([image, image, image], axis=-1)  # Konversi ke RGB
+        elif image.shape[2] == 1:
+            image = np.concatenate([image, image, image], axis=-1)  # Konversi ke RGB
+        elif image.shape[2] == 4:
+            image = image[:, :, :3]  # Buang channel alpha
+        
         # Resizing untuk konsistensi
-        if image.shape[0] > 512 or image.shape[1] > 512:
-            image = resize(image, (512, 512), anti_aliasing=True)
+        if image.shape[0] != 256 or image.shape[1] != 256:
+            image = resize(image, (256, 256), anti_aliasing=True)
+        
+        # Konversi ke integer untuk ekstraksi fitur
+        image_int = (image * 255).astype(np.uint8)
             
         # Ekstrak semua fitur
-        lbp_feat = extract_lbp_features(image)
-        noise_feat = extract_noise_features(image)
-        glcm_feat = extract_glcm_features(image)
-        freq_feat = extract_frequency_features(image)
+        lbp_feat = extract_lbp_features(image_int)
+        noise_feat = extract_noise_features(image_int)
+        glcm_feat = extract_glcm_features(image_int)
+        freq_feat = extract_frequency_features(image_int)
         
         feature_list = [lbp_feat, noise_feat, glcm_feat, freq_feat]
         

@@ -16,6 +16,16 @@ import zipfile
 import kaggle
 import shutil
 
+# Cek ketersediaan CUDA
+if tf.test.is_built_with_cuda():
+    print("CUDA tersedia. Menggunakan GPU untuk training...")
+    # Aktifkan memory growth untuk menghindari alokasi memori berlebihan
+    physical_devices = tf.config.list_physical_devices('GPU')
+    for device in physical_devices:
+        tf.config.experimental.set_memory_growth(device, True)
+else:
+    print("CUDA tidak tersedia. Menggunakan CPU...")
+
 def download_cifake_dataset(output_dir='datasets/cifake'):
     """Download CIFAKE dataset menggunakan Kaggle API"""
     print("Mengunduh dataset CIFAKE...")
@@ -156,20 +166,20 @@ def build_model(input_dim):
         
         Dense(128, activation='relu'),
         BatchNormalization(),
-        Dropout(0.3),
+        Dropout(0.2),
         
         Dense(64, activation='relu'),
         BatchNormalization(),
-        Dropout(0.3),
+        Dropout(0.2),
         
         Dense(1, activation='sigmoid')
     ])
     
-    model.compile(
-        optimizer='adam',
-        loss='binary_crossentropy',
-        metrics=['accuracy']
-    )
+    # Compile model dengan optimizer yang dioptimalkan untuk GPU
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+    model.compile(optimizer=optimizer,
+                 loss='binary_crossentropy',
+                 metrics=['accuracy'])
     
     return model
 

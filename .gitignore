@@ -1,1 +1,32 @@
-__pycache__
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+*.pth
+*.pt
+*.log
+*.csv
+*.xlsx
+*.npy
+*.npz
+.DS_Store
+Thumbs.db
+# Folder dataset dan hasil
+/dataset/
+/output/
+/results/
+# Jupyter dan VSCode
+.ipynb_checkpoints/
+.vscode/
+# File gambar hasil visualisasi
+*.png
+*.jpg
+*.jpeg
+*.svg
+# File markdown hasil evaluasi
+*.md
+# Jika ingin melacak file tertentu, gunakan ! di depannya
+# !dataset/README.md
+Jaga-jaga kalau lupa.txt
+

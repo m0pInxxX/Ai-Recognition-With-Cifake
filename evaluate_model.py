@@ -3,10 +3,24 @@ import numpy as np
 import pickle
 import argparse
 import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 from sklearn.metrics import classification_report, confusion_matrix, roc_curve, auc, precision_recall_curve
 import matplotlib.pyplot as plt
+import seaborn as sns
 from skimage.io import imread
 from utils_feature import extract_all_features
+
+# Cek ketersediaan CUDA
+if tf.test.is_built_with_cuda():
+    print("CUDA tersedia. Menggunakan GPU untuk training...")
+    # Aktifkan memory growth untuk menghindari alokasi memori berlebihan
+    physical_devices = tf.config.list_physical_devices('GPU')
+    for device in physical_devices:
+        tf.config.experimental.set_memory_growth(device, True)
+else:
+    print("CUDA tidak tersedia. Menggunakan CPU...")
 
 def load_model_and_scaler(model_path, scaler_path=None):
     """Muat model dan scaler"""
@@ -25,73 +39,64 @@ def load_model_and_scaler(model_path, scaler_path=None):
         print(f"Error memuat model atau scaler: {e}")
         return None, None
 
-def evaluate_model_on_test_data(model, x_test, y_test, scaler=None):
-    """Evaluasi model pada data uji"""
-    # Pra-proses data uji jika scaler tersedia
-    if scaler:
-        x_test_scaled = scaler.transform(x_test)
-    else:
-        x_test_scaled = x_test
+def visualize_pca(features, labels, n_components=2):
+    """Visualisasi PCA dari fitur gambar"""
+    # Standardisasi fitur
+    scaler = StandardScaler()
+    features_scaled = scaler.fit_transform(features)
     
-    # Prediksi
-    y_pred_prob = model.predict(x_test_scaled)
-    y_pred = (y_pred_prob > 0.5).astype(int).flatten()
+    # Terapkan PCA
+    pca = PCA(n_components=n_components)
+    features_pca = pca.fit_transform(features_scaled)
     
-    # Cetak laporan klasifikasi
-    print("\nLaporan Klasifikasi:")
-    print(classification_report(y_test, y_pred, target_names=['Asli', 'AI']))
+    # Plot hasil PCA
+    plt.figure(figsize=(10, 8))
+    scatter = plt.scatter(features_pca[:, 0], features_pca[:, 1], 
+                         c=labels, cmap='viridis', alpha=0.6)
+    plt.colorbar(scatter)
+    plt.title('Visualisasi PCA dari Fitur Gambar')
+    plt.xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.2%} variance)')
+    plt.ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.2%} variance)')
     
-    # Plot confusion matrix
-    cm = confusion_matrix(y_test, y_pred)
-    plt.figure(figsize=(8, 6))
-    plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
-    plt.title('Confusion Matrix')
-    plt.colorbar()
-    plt.xticks([0, 1], ['Asli', 'AI'])
-    plt.yticks([0, 1], ['Asli', 'AI'])
-    plt.xlabel('Prediksi')
-    plt.ylabel('Aktual')
+    # Tambahkan legend
+    plt.legend(['Gambar Asli', 'Gambar AI'])
     
-    # Tambahkan anotasi di setiap sel
-    thresh = cm.max() / 2.
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            plt.text(j, i, format(cm[i, j], 'd'),
-                     ha="center", va="center",
-                     color="white" if cm[i, j] > thresh else "black")
+    # Plot scree plot (explained variance ratio)
+    plt.figure(figsize=(8, 4))
+    plt.plot(range(1, len(pca.explained_variance_ratio_) + 1), 
+             np.cumsum(pca.explained_variance_ratio_), 'bo-')
+    plt.title('Scree Plot: Cumulative Explained Variance Ratio')
+    plt.xlabel('Number of Components')
+    plt.ylabel('Cumulative Explained Variance Ratio')
+    plt.grid(True)
     
     plt.tight_layout()
-    plt.savefig('confusion_matrix_evaluation.png')
+    plt.show()
     
-    # Plot ROC curve
-    fpr, tpr, _ = roc_curve(y_test, y_pred_prob)
-    roc_auc = auc(fpr, tpr)
+    return pca, features_pca
+
+def evaluate_model_on_test_data(model, features, labels, scaler=None):
+    """Evaluasi model pada data uji"""
+    # Pra-proses fitur jika scaler tersedia
+    if scaler:
+        features = scaler.transform(features)
     
+    # Prediksi
+    y_pred_prob = model.predict(features)
+    y_pred = (y_pred_prob > 0.5).astype(int)
+    
+    # Tampilkan hasil evaluasi
+    print("\nHasil Evaluasi:")
+    print(classification_report(labels, y_pred))
+    
+    # Plot confusion matrix
     plt.figure(figsize=(8, 6))
-    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
-    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Receiver Operating Characteristic (ROC)')
-    plt.legend(loc="lower right")
-    plt.savefig('roc_curve.png')
-    
-    # Plot Precision-Recall curve
-    precision, recall, _ = precision_recall_curve(y_test, y_pred_prob)
-    pr_auc = auc(recall, precision)
-    
-    plt.figure(figsize=(8, 6))
-    plt.plot(recall, precision, color='blue', lw=2, label=f'PR curve (area = {pr_auc:.2f})')
-    plt.fill_between(recall, precision, alpha=0.2, color='blue')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('Recall')
-    plt.ylabel('Precision')
-    plt.title('Precision-Recall Curve')
-    plt.legend(loc="lower left")
-    plt.savefig('precision_recall_curve.png')
+    cm = confusion_matrix(labels, y_pred)
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+    plt.title('Confusion Matrix')
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.show()
     
     return y_pred, y_pred_prob
 
@@ -131,6 +136,7 @@ def main():
     parser.add_argument("--scaler", type=str, help="Path ke scaler yang digunakan untuk pra-proses data (.pkl)")
     parser.add_argument("--test_data", type=str, help="Path ke file data uji (.pkl) yang dihasilkan oleh extract_features.py")
     parser.add_argument("--image", type=str, help="Path ke gambar tunggal untuk diklasifikasi")
+    parser.add_argument("--pca_components", type=int, default=2, help="Jumlah komponen PCA untuk visualisasi (default: 2)")
     
     args = parser.parse_args()
     
@@ -153,7 +159,14 @@ def main():
             print(f"Jumlah gambar AI: {np.sum(labels)}")
             print(f"Jumlah gambar asli: {len(labels) - np.sum(labels)}")
             
+            # Visualisasi PCA
+            print("\nMembuat visualisasi PCA...")
+            pca, features_pca = visualize_pca(features, labels, n_components=args.pca_components)
+            
+            # Evaluasi model
+            print("\nMengevaluasi model...")
             y_pred, y_pred_prob = evaluate_model_on_test_data(model, features, labels, scaler)
+            
         except Exception as e:
             print(f"Error memuat atau mengevaluasi data uji: {e}")
     

@@ -35,8 +35,8 @@ def preprocess_image_for_hybrid(image):
     """Pra-proses gambar untuk model hybrid"""
     from skimage.transform import resize
     
-    # Resize ke ukuran input EfficientNetB0
-    img_resized = resize(image, (224, 224), anti_aliasing=True)
+    # Resize ke ukuran 256x256
+    img_resized = resize(image, (256, 256), anti_aliasing=True)
     
     # Konversi ke RGB jika grayscale
     if len(img_resized.shape) == 2:

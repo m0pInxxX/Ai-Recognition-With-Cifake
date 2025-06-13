@@ -1,0 +1,29 @@
+// Model Hybrid Architecture
+digraph {
+	A1 [label="Input Gambar
+(RGB 256x256)" shape=box]
+	A2 [label="Input Fitur
+(89 fitur)" shape=box]
+	B1 [label="EfficientNetB0
+(Pretrained)" shape=box]
+	C1 [label="Feature Vector
+(1280)" shape=box]
+	B2 [label="Feature Processor
+(Linear+ReLU+BN+Dropout)" shape=box]
+	C2 [label="Processed Features
+(128)" shape=box]
+	D [label="Concatenate
+(1280+128)" shape=box]
+	E [label="Classifier
+(Linear+ReLU+BN+Dropout)" shape=box]
+	F [label="Output
+(Sigmoid)" shape=box]
+	A1 -> B1
+	A2 -> B2
+	B1 -> C1
+	B2 -> C2
+	C1 -> D
+	C2 -> D
+	D -> E
+	E -> F
+}

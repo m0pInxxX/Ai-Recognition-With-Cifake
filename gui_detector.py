@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 from PIL import Image, ImageTk
 import tensorflow as tf
+import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -14,6 +15,9 @@ import time
 from cifake_classifier import load_model_and_scaler, preprocess_image_for_hybrid, is_hybrid_model
 from utils_feature import extract_all_features
 from skimage.io import imread
+
+# Import untuk model PyTorch
+from train_hybrid import HybridModel
 
 class AIDetectorGUI:
     def __init__(self, root):
@@ -31,6 +35,7 @@ class AIDetectorGUI:
         self.scaler = None
         self.result_label = None
         self.is_processing_batch = False
+        self.model_type = "tensorflow"  # Dapat berupa "tensorflow" atau "pytorch"
         
         # Frame Utama
         self.main_frame = ttk.Frame(root, padding="10")
@@ -54,6 +59,9 @@ class AIDetectorGUI:
         
         # Cari model dan scaler default
         self.find_default_models()
+
+        # Perangkat untuk PyTorch
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     def setup_single_tab(self):
         # Frame Utama untuk tab deteksi tunggal
@@ -252,9 +260,9 @@ class AIDetectorGUI:
         models = []
         scalers = []
         
-        # Cari file dengan ekstensi .keras atau .h5
+        # Cari file dengan ekstensi .keras, .h5, atau .pth
         for file in os.listdir('.'):
-            if file.endswith('.keras') or file.endswith('.h5'):
+            if file.endswith('.keras') or file.endswith('.h5') or file.endswith('.pth'):
                 models.append(file)
             elif file.endswith('.pkl') and 'scaler' in file.lower():
                 scalers.append(file)
@@ -270,6 +278,12 @@ class AIDetectorGUI:
             self.batch_model_dropdown['values'] = models
             self.batch_model_dropdown.current(0)
             self.batch_model_var.set(models[0])
+            
+            # Tentukan tipe model berdasarkan ekstensi
+            if self.model_path.endswith('.pth'):
+                self.model_type = "pytorch"
+            else:
+                self.model_type = "tensorflow"
         
         # Update dropdown scalers
         if scalers:
@@ -337,7 +351,9 @@ class AIDetectorGUI:
     def browse_model(self):
         """Buka dialog untuk memilih model"""
         filetypes = [
+            ("Model files", "*.keras *.h5 *.pth"),
             ("Keras model", "*.keras *.h5"),
+            ("PyTorch model", "*.pth"),
             ("All files", "*.*")
         ]
         
@@ -352,6 +368,12 @@ class AIDetectorGUI:
             # Reset model dan scaler
             self.model = None
             self.scaler = None
+            
+            # Tentukan tipe model berdasarkan ekstensi
+            if model_path.endswith('.pth'):
+                self.model_type = "pytorch"
+            else:
+                self.model_type = "tensorflow"
     
     def browse_scaler(self):
         """Buka dialog untuk memilih scaler"""
@@ -413,6 +435,29 @@ class AIDetectorGUI:
         except Exception as e:
             messagebox.showerror("Error", f"Tidak dapat memuat gambar: {str(e)}")
     
+    def load_pytorch_model(self, model_path):
+        """Muat model PyTorch"""
+        try:
+            checkpoint = torch.load(model_path, map_location=self.device)
+            
+            # Cek apakah ini file checkpoint atau model state_dict langsung
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                num_features = checkpoint.get('input_shape_features', 89)  # Default ke 89 jika tidak ada
+                model = HybridModel(input_shape_features=num_features)
+                model.load_state_dict(checkpoint['model_state_dict'])
+            else:
+                # Asumsi bahwa ini adalah state_dict langsung
+                model = HybridModel(input_shape_features=89)  # Default ke 89 fitur
+                model.load_state_dict(checkpoint)
+            
+            model = model.to(self.device)
+            model.eval()  # Set model ke mode evaluasi
+            return model
+        
+        except Exception as e:
+            messagebox.showerror("Error", f"Gagal memuat model PyTorch: {str(e)}")
+            return None
+    
     def detect_image(self):
         """Deteksi gambar menggunakan model"""
         if not self.image_path:
@@ -427,9 +472,12 @@ class AIDetectorGUI:
             # Tampilkan progress bar
             self.progress_bar.start()
             
-            # Muat model dan scaler jika belum dimuat
-            if self.model is None or self.scaler is None:
-                self.model, self.scaler = load_model_and_scaler(self.model_path, self.scaler_path)
+            # Muat model berdasarkan tipe
+            if self.model is None:
+                if self.model_type == "pytorch":
+                    self.model = self.load_pytorch_model(self.model_path)
+                else:
+                    self.model, self.scaler = load_model_and_scaler(self.model_path, self.scaler_path)
                 
                 if self.model is None:
                     messagebox.showerror("Error", "Gagal memuat model!")
@@ -444,30 +492,11 @@ class AIDetectorGUI:
             if len(image.shape) == 3 and image.shape[2] == 4:
                 image = image[:, :, :3]
             
-            # Cek apakah model hybrid atau bukan
-            if is_hybrid_model(self.model):
-                # Pra-proses untuk hybrid model
-                img_cnn, features = preprocess_image_for_hybrid(image)
-                
-                # Pra-proses fitur dengan scaler jika ada
-                if self.scaler:
-                    features = self.scaler.transform(features)
-                
-                # Prediksi
-                prediction_prob = self.model.predict([img_cnn, features])[0][0]
+            # Prediksi berdasarkan tipe model
+            if self.model_type == "pytorch":
+                prediction_prob = self.predict_with_pytorch(image)
             else:
-                # Ekstrak fitur untuk model tradisional
-                features = extract_all_features(image)
-                
-                # Reshape features untuk prediksi
-                features = features.reshape(1, -1)
-                
-                # Pra-proses fitur jika scaler tersedia
-                if self.scaler:
-                    features = self.scaler.transform(features)
-                
-                # Prediksi
-                prediction_prob = self.model.predict(features)[0][0]
+                prediction_prob = self.predict_with_tensorflow(image)
             
             # Tampilkan hasil
             self.result_text.configure(state='normal')  # Buka akses untuk edit
@@ -484,7 +513,61 @@ class AIDetectorGUI:
             messagebox.showerror("Error", f"Terjadi kesalahan saat deteksi: {str(e)}")
             self.progress_bar.stop()
     
-    def process_single_image(self, image_path, model, scaler):
+    def predict_with_pytorch(self, image):
+        """Prediksi dengan model PyTorch"""
+        try:
+            # Ekstrak fitur
+            features = extract_all_features(image)
+            
+            # Preprocess image untuk CNN (resize ke 256x256)
+            from skimage.transform import resize
+            img_resized = resize(image, (256, 256), anti_aliasing=True, preserve_range=True)
+            
+            # Konversi ke tensor
+            img_tensor = torch.tensor(img_resized.transpose(2, 0, 1), dtype=torch.float32).unsqueeze(0).to(self.device)
+            features_tensor = torch.tensor(features.reshape(1, -1), dtype=torch.float32).to(self.device)
+            
+            # Prediksi
+            with torch.no_grad():
+                output = self.model(img_tensor, features_tensor)
+                prediction_prob = output.squeeze().cpu().numpy()
+            
+            return float(prediction_prob)
+        
+        except Exception as e:
+            messagebox.showerror("Error", f"Error dalam prediksi PyTorch: {str(e)}")
+            return 0.5  # Nilai default jika gagal
+    
+    def predict_with_tensorflow(self, image):
+        """Prediksi dengan model TensorFlow"""
+        # Cek apakah model hybrid atau bukan
+        if is_hybrid_model(self.model):
+            # Pra-proses untuk hybrid model
+            img_cnn, features = preprocess_image_for_hybrid(image)
+            
+            # Pra-proses fitur dengan scaler jika ada
+            if self.scaler:
+                features = self.scaler.transform(features)
+            
+            # Prediksi
+            prediction_prob = self.model.predict([img_cnn, features])[0][0]
+        else:
+            # Ekstrak fitur untuk model tradisional
+            features = extract_all_features(image)
+            
+            # Reshape features untuk prediksi
+            features = features.reshape(1, -1)
+            
+            # Pra-proses fitur jika scaler tersedia
+            if self.scaler:
+                features = self.scaler.transform(features)
+            
+            # Prediksi
+            prediction_prob = self.model.predict(features)[0][0]
+        
+        return float(prediction_prob)
+    
+    def process_single_image(self, image_path, model, scaler=None):
         """Proses satu gambar untuk batch processing"""
         try:
             # Baca gambar
@@ -495,35 +578,53 @@ class AIDetectorGUI:
             if len(image.shape) == 3 and image.shape[2] == 4:
                 image = image[:, :, :3]
             
-            # Cek apakah model hybrid atau bukan
-            if is_hybrid_model(model):
-                # Pra-proses untuk hybrid model
-                img_cnn, features = preprocess_image_for_hybrid(image)
-                
-                # Pra-proses fitur dengan scaler jika ada
-                if scaler:
-                    features = scaler.transform(features)
-                
-                # Prediksi
-                prediction_prob = model.predict([img_cnn, features])[0][0]
-            else:
-                # Ekstrak fitur untuk model tradisional
+            # Prediksi berdasarkan tipe model
+            if self.model_type == "pytorch":
+                # Ekstrak fitur
                 features = extract_all_features(image)
                 
-                # Reshape features untuk prediksi
-                features = features.reshape(1, -1)
+                # Preprocess image untuk CNN (resize ke 256x256)
+                from skimage.transform import resize
+                img_resized = resize(image, (256, 256), anti_aliasing=True, preserve_range=True)
                 
-                # Pra-proses fitur jika scaler tersedia
-                if scaler:
-                    features = scaler.transform(features)
+                # Konversi ke tensor
+                img_tensor = torch.tensor(img_resized.transpose(2, 0, 1), dtype=torch.float32).unsqueeze(0).to(self.device)
+                features_tensor = torch.tensor(features.reshape(1, -1), dtype=torch.float32).to(self.device)
                 
                 # Prediksi
-                prediction_prob = model.predict(features)[0][0]
+                with torch.no_grad():
+                    output = model(img_tensor, features_tensor)
+                    prediction_prob = output.squeeze().cpu().numpy()
+            else:
+                # Cek apakah model hybrid atau bukan
+                if is_hybrid_model(model):
+                    # Pra-proses untuk hybrid model
+                    img_cnn, features = preprocess_image_for_hybrid(image)
+                    
+                    # Pra-proses fitur dengan scaler jika ada
+                    if scaler:
+                        features = scaler.transform(features)
+                    
+                    # Prediksi
+                    prediction_prob = model.predict([img_cnn, features])[0][0]
+                else:
+                    # Ekstrak fitur untuk model tradisional
+                    features = extract_all_features(image)
+                    
+                    # Reshape features untuk prediksi
+                    features = features.reshape(1, -1)
+                    
+                    # Pra-proses fitur jika scaler tersedia
+                    if scaler:
+                        features = scaler.transform(features)
+                    
+                    # Prediksi
+                    prediction_prob = model.predict(features)[0][0]
             
             # Tentukan kelas prediksi
             prediction_class = 'AI' if prediction_prob > 0.5 else 'Asli'
             
-            return os.path.basename(image_path), prediction_class, prediction_prob
+            return os.path.basename(image_path), prediction_class, float(prediction_prob)
         
         except Exception as e:
             print(f"Error processing {image_path}: {e}")
@@ -566,11 +667,18 @@ class AIDetectorGUI:
             self.batch_progress_var.set(0)
             self.batch_progress_text.set("0%")
             
-            # Muat model dan scaler
+            # Tentukan tipe model berdasarkan ekstensi
             model_path = os.path.join(os.getcwd(), self.batch_model_var.get())
             scaler_path = os.path.join(os.getcwd(), self.batch_scaler_var.get()) if self.batch_scaler_var.get() else None
             
-            model, scaler = load_model_and_scaler(model_path, scaler_path)
+            # Tentukan tipe model berdasarkan ekstensi
+            if model_path.endswith('.pth'):
+                self.model_type = "pytorch"
+                model = self.load_pytorch_model(model_path)
+                scaler = None  # PyTorch model doesn't use scaler currently
+            else:
+                self.model_type = "tensorflow"
+                model, scaler = load_model_and_scaler(model_path, scaler_path)
             
             if model is None:
                 messagebox.showerror("Error", "Gagal memuat model!")
